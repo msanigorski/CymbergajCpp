@@ -26,7 +26,7 @@ private:
     cv::Scalar hsv_upper_;
     
     // Background subtraction
-    cv::Ptr<cv::BackgroundSubtractor> bg_subtractor_;
+    cv::Ptr<cv::BackgroundSubtractorMOG2> bg_subtractor_;
     
     // Common parameters
     double min_area_;

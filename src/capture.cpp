@@ -14,15 +14,27 @@ FrameCapture::~FrameCapture() {
     release();
 }
 
+// Fragment capture.cpp - wykorzystanie V4L2
 bool FrameCapture::initialize() {
-    if (backend_ == "gstreamer") {
-        return initializeGStreamer();
-    } else if (backend_ == "libcamera") {
-        return initializeLibcamera();
-    } else {
-        std::cerr << "Unknown backend: " << backend_ << std::endl;
+    // Dla RPi3 używamy tylko V4L2
+    cap_.open(0, cv::CAP_V4L2);
+    
+    if (!cap_.isOpened()) {
+        std::cerr << "Failed to open camera with V4L2" << std::endl;
         return false;
     }
+    
+    // Ustaw parametry dla RPi3
+    cap_.set(cv::CAP_PROP_FRAME_WIDTH, width_);
+    cap_.set(cv::CAP_PROP_FRAME_HEIGHT, height_);
+    cap_.set(cv::CAP_PROP_FPS, fps_);
+    cap_.set(cv::CAP_PROP_BUFFERSIZE, 1);  // Minimalna latencja
+    
+    // Wyłącz auto-exposure
+    cap_.set(cv::CAP_PROP_AUTO_EXPOSURE, 0.25);
+    cap_.set(cv::CAP_PROP_EXPOSURE, 20);  // Dłuższy dla RPi3
+    
+    return true;
 }
 
 bool FrameCapture::initializeGStreamer() {
