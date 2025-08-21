@@ -11,6 +11,15 @@
 #include <iomanip>
 #include <deque>
 #include <cmath>
+#include <mutex>
+#include <atomic>
+#include <map>
+
+#ifdef USE_ABB
+#include "robot/abb/AbbController.hpp"
+#endif
+
+
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -23,6 +32,20 @@
     #include <unistd.h>
     #define closesocket close
 #endif
+
+struct RobotDiag {
+    std::string ip = "192.168.125.1";
+    uint16_t port = 11000;
+    std::atomic<bool> connected{false};
+    std::string last_error;
+} g_robot_diag;
+
+std::mutex g_robot_mx;
+
+#ifdef USE_ABB
+static AbbController* g_robot = nullptr;
+#endif
+
 
 struct PuckData {
     float x = -1, y = -1;
