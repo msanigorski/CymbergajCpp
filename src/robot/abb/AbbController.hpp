@@ -1,49 +1,59 @@
 #pragma once
 #include <string>
-#include <vector>
 #include <array>
-#include <optional>
+#include <atomic>
 #include <cstdint>
 
-namespace cymbergaj::robot::abb {
+namespace cymbergaj { namespace robot { namespace abb {
 
-// Prosty wrapper na open_abb (abb_comm)
+/**
+ * Minimalny kontroler ABB (bez ROS), używa protokołu z abb_comm.*
+ *  - Łączy się TCP z serwerem "motion" na kontrolerze (IP/port).
+ *  - Wysyła komendy sformatowane przez abb_comm i czeka na odpowiedź.
+ *
+ * Uwaga o kwaternionie:
+ *  open_abb (abb_comm) oczekuje porządku (q0, qx, qy, qz) gdzie q0 = w.
+ *  W moveL przyjmujemy std::array<double,7> w porządku:
+ *     [x, y, z, q0(w), qx, qy, qz]  — dokładnie jak abb_comm::setCartesian.
+ */
 class AbbController {
 public:
-    struct JointTarget { std::array<double,6> j; };        // [rad]
-    struct Pose {                                          // TCP pose w ukł. robota
-        std::array<double,3> p;                            // [mm] x,y,z
-        std::array<double,4> q;                            // quaternion w,x,y,z
-    };
-
-    struct Speed { double tcp; double ori; };              // [mm/s], [deg/s]
-    struct Zone  { double fine_mm; };                      // uproszczona "strefa" (fine/approx)
-
-    // ip_robot: zwykle 192.168.125.1; port zgodny z SERVER.mod (domyślnie 11000)
-    explicit AbbController(std::string ip_robot="192.168.125.1", uint16_t port=11000);
+    AbbController(std::string ip, uint16_t port);
     ~AbbController();
 
     bool connect();
     void disconnect();
-    bool isConnected() const;
+    bool isConnected() const { return connected_; }
 
-    // Ustawienia ruchu
-    bool setSpeed(const Speed& s);
-    bool setZone(const Zone& z);
+    // Konfiguracje
+    bool setWorkObject(const std::array<double,7>& wobj_xyz_q); // [x,y,z,q0,qx,qy,qz]
+    bool setTool(const std::array<double,7>& tool_xyz_q);       // [x,y,z,q0,qx,qy,qz]
+    bool setSpeed(double tcp_mm_s, double ori_deg_s);           // mm/s i deg/s (jak w abb_comm)
+    bool setZoneFine();                                         // fine = true
+    bool setZone(double p_tcp_mm, double p_ori_mm, double ori_deg); // fine=false
 
-    bool moveL(const std::array<double,7>& pose);  
-    // [x,y,z,qx,qy,qz,qw] w mm i kwaternion
-    bool setWorkObject(const std::string& wobj);
-    bool setTool(const std::string& tool);
+    // Ruchy
+    bool moveL(const std::array<double,7>& pose_xyz_q); // [x,y,z,q0,qx,qy,qz]
 
-    
-    // Pomocnicze
-    std::optional<JointTarget> getJoints();   // wymaga LOGGER po stronie RAPID
-    std::optional<Pose>        getPose();     // jw.
+    // Odczyty (opcjonalne)
+    bool getCartesian(std::array<double,7>& pose_xyz_q);        // [x,y,z,q0,qx,qy,qz]
+    bool getJoints(std::array<double,6>& joints_deg);           // stopnie (tak zwraca parseJoints)
+
+    const std::string& lastError() const { return last_error_; }
 
 private:
-    struct Impl;               // PImpl — trzyma sockety/obiekty z abb_comm
-    Impl* impl_;
+    std::string ip_;
+    uint16_t port_{0};
+    int sock_{-1};
+    std::atomic<bool> connected_{false};
+    std::string last_error_;
+
+    // Wejście/wyjście TCP z timeoutem (blokujące z select()).
+    // Zwraca true, jeśli odpowiedź semantycznie OK (kod=1) i idCode się zgadza (jeśli >-1).
+    bool sendAndReceive(const std::string& cmd, std::string& reply, int idCode = -1, int timeout_ms = 1000);
+
+    // Pomocnicze
+    bool ensureConnected();
 };
 
-} // namespace
+}}} // namespace

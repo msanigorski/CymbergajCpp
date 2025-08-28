@@ -1,21 +1,32 @@
-void RobotStrikePlanner::strikeAt(const cv::Point2f& puck_pos) {
-    if (!controller.isConnected()) {
-        std::cerr << "[Planner] Robot not connected!" << std::endl;
-        return;
-    }
+#include "robot/abb/RobotStrikePlanner.hpp"
+#include "robot/abb/AbbController.hpp"
 
-    // mapowanie stołu cymbergaja (np. 800x400 mm) na przestrzeń robota
-    double table_width = 800.0;   // mm
-    double table_height = 400.0;  // mm
+namespace cymbergaj { namespace robot { namespace abb {
 
-    // załóżmy, że workobject w (0,0,0) to lewy-dół stołu
-    double x = puck_pos.x;  // mm w układzie stołu
-    double y = puck_pos.y;  // mm w układzie stołu
-    double z = 50.0;        // wysokość TCP nad stołem
+using Pose7 = std::array<double,7>;
 
-    // orientacja TCP: pionowo w dół
-    std::array<double,7> pose = {x, y, z, 0, 0, 0, 1};  // kwaternion [0,0,0,1]
+Pose7 RobotStrikePlanner::mapPuckToTCP(const cv::Point2f& p) {
+    // PRZYKŁADOWY mapping (dopasuj do stołu i kalibracji!)
+    // Załóżmy układ: 1 px = 1 mm, (0,0) w lewym górnym rogu obrazu.
+    // Ustawiamy stałą wysokość Z i kwaternion „do dołu”.
+    const double x_mm = static_cast<double>(p.x);
+    const double y_mm = static_cast<double>(p.y);
+    const double z_mm = 50.0;           // wysokość nad stołem (mm) — dopasuj
+    const double q0 = 1.0, qx = 0.0, qy = 0.0, qz = 0.0; // brak rotacji (w,x,y,z)
 
-    std::cout << "[Planner] Striking at puck (" << puck_pos.x << "," << puck_pos.y << ")" << std::endl;
-    controller.moveL(pose);
+    return { x_mm, y_mm, z_mm, q0, qx, qy, qz };
 }
+
+void RobotStrikePlanner::strikeAt(const cv::Point2f& puck_pos) {
+    if (!ctrl_) return;
+
+    // 1) Ustal wobj/tool/speed/zone — jednorazowo gdzie indziej;
+    // tu tylko ruch. (Załóżmy, że już ustawione).
+    // 2) Wylicz docelowy TCP
+    Pose7 pose = mapPuckToTCP(puck_pos);
+
+    // 3) MoveL
+    (void)ctrl_->moveL(pose);
+}
+
+}}} // namespace

@@ -1,84 +1,15 @@
-# Puck Tracker Configuration File
-# Optimized for Raspberry Pi Camera v2 @ 90 FPS
-
-# Camera settings
-camera:
-  width: 640
-  height: 480
-  fps: 90
-  exposure: 10  # Short exposure time for minimal motion blur (1/1000s)
-  gain: 1.0
-  wb_temperature: 5000
-  
-# Detection parameters
-detection:
-  # HSV color range for red puck (adjust based on your puck color)
-  hsv_lower: [0, 100, 100]   # Lower HSV threshold
-  hsv_upper: [10, 255, 255]  # Upper HSV threshold
-  
-  # Alternative orange/yellow puck
-  # hsv_lower: [10, 100, 100]
-  # hsv_upper: [30, 255, 255]
-  
-  # Contour validation
-  min_area: 100.0      # Minimum puck area in pixels
-  max_area: 5000.0     # Maximum puck area in pixels
-  min_circularity: 0.7 # Minimum circularity (1.0 = perfect circle)
-  
-  # Region of Interest (x, y, width, height)
-  # Adjust to your table position in camera view
-  roi: [20, 20, 600, 440]
-  
-# Kalman filter parameters
-kalman:
-  process_noise: 0.0001
-  measurement_noise: 0.1
-  velocity_noise: 0.01
-  
-# Table dimensions (in pixels or real units)
 table:
-  dimensions: [640.0, 480.0]  # Width x Height
-  # For real dimensions in meters:
-  # dimensions: [1.2, 0.8]
-  
-# Physics parameters
+  dimensions: [320, 240]
+detection:
+  hsv_lower: [0, 100, 100]
+  hsv_upper: [10, 255, 255]
+  min_area: 50
+  max_area: 2000
+  min_circularity: 0.7
+  roi: [0, 0, 320, 240]
 physics:
-  restitution: 0.9  # Energy retention after bounce (0.0-1.0)
-  friction: 0.99    # Air/table friction coefficient
-  
-# Overlay visualization
+  restitution: 0.9
 overlay:
-  colors:
-    puck: [0, 255, 0]        # Green (BGR format)
-    velocity: [255, 0, 0]     # Blue
-    trajectory: [255, 255, 0] # Cyan
-    bounce: [0, 255, 255]     # Yellow
-    text: [255, 255, 255]     # White
-    goal: [0, 0, 255]         # Red
-    
-  puck_radius: 10
-  velocity_scale: 10.0
-  trajectory_points: 100
-  
-# Performance tuning
-performance:
-  queue_size: 10         # Frame queue size
-  max_lost_frames: 30    # Reset tracker after N lost frames
-  enable_neon: true      # Use NEON SIMD on ARM
-  thread_priority: high  # Thread priority (requires root)
-  
-# Output settings
-output:
-  show_window: true
-  enable_stream: false
-  stream_address: "udp://127.0.0.1:5000"
-  record_video: false
-  video_file: "output.mp4"
-  
-# Debug settings
-debug:
-  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  show_fps: true
-  show_latency: true
-  save_frames: false
-  frame_dir: "/tmp/puck_frames"
+  puck_radius: 5
+  velocity_scale: 5.0
+  trajectory_points: 50
