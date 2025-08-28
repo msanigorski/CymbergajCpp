@@ -178,6 +178,7 @@ void capture_thread(FrameCapture* capture, LockFreeQueue<FrameData>* queue,
 void process_thread(LockFreeQueue<FrameData>* input_queue,
                    Detector* detector, KalmanTracker* tracker,
                    std::atomic<bool>& running, PerfStats* stats,
+                   std::atomic<int>& frames_processed,                 // <-- added
                    std::ofstream* output_file = nullptr) {
     
     FrameData frame_data;
@@ -249,6 +250,8 @@ void process_thread(LockFreeQueue<FrameData>* input_queue,
             
             auto end = high_resolution_clock::now();
             stats->process_time = duration_cast<microseconds>(end - start).count();
+
+            frames_processed++;  // <-- added
             
             // Status display (reduced frequency)
             if (frame_data.frame_id % 30 == 0) {
@@ -703,14 +706,18 @@ int main(int argc, char* argv[]) {
     // Start processing threads
     std::thread capture_t(capture_thread, capture.get(), &capture_queue, 
                          std::ref(g_running), stats.get());
+
+    // Atomic counter for processed frames (shared)
+    std::atomic<int> frames_processed{0};                                 // <-- added
     
     std::thread process_t(process_thread, &capture_queue,
                          detector.get(), tracker.get(), std::ref(g_running),
-                         stats.get(), cfg.save_output ? &output_file : nullptr);
+                         stats.get(), std::ref(frames_processed),           // <-- added
+                         cfg.save_output ? &output_file : nullptr);
     
     // Performance monitoring loop
     auto last_stats_update = high_resolution_clock::now();
-    int frames_processed = 0;
+    // removed: int frames_processed = 0;  // now using atomic
     
     while (g_running) {
         std::this_thread::sleep_for(seconds(1));
@@ -719,7 +726,8 @@ int main(int argc, char* argv[]) {
         auto elapsed = duration_cast<seconds>(now - last_stats_update).count();
         
         if (elapsed >= 5 && cfg.enable_profiling) { // Every 5 seconds
-            float fps = frames_processed / static_cast<float>(elapsed);
+            int processed = frames_processed.exchange(0);                   // <-- added
+            float fps = processed / static_cast<float>(elapsed);
             
             // Update shared stats
             {
@@ -735,11 +743,8 @@ int main(int argc, char* argv[]) {
                      << " | Cap: " << stats->capture_time << "μs"
                      << " | Proc: " << stats->process_time << "μs" << std::endl;
             
-            frames_processed = 0;
             last_stats_update = now;
         }
-        
-        frames_processed++;
     }
     
     // Cleanup
