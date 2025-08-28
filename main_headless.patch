@@ -1,0 +1,59 @@
+diff --git a/src/http_puck_tracker.cpp b/src/http_puck_tracker.cpp
+index b5ecbb23b5bc60f8f9fa1fb12b9187a5ddef617d..5fdde0da760397ced847c3e3ce0d8a3fb1dcda95 100644
+--- a/src/http_puck_tracker.cpp
++++ b/src/http_puck_tracker.cpp
+@@ -387,50 +387,54 @@ public:
+             PuckData puck = detectPuckFast(frame);
+             
+             // Thread-safe update
+             {
+                 std::lock_guard<std::mutex> lock(data_mutex);
+                 previous_puck = current_puck;
+                 current_puck = puck;
+                 
+                 if (puck.detected) {
+                     trajectory.push_back(puck);
+                     if (trajectory.size() > MAX_TRAJECTORY_POINTS) {
+                         trajectory.pop_front();
+                     }
+                 }
+             }
+             
+             // FPS counting
+             frame_counter++;
+             auto now = std::chrono::steady_clock::now();
+             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fps_update);
+             
+             if (elapsed.count() >= 1000) {
+                 processing_fps = frame_counter.load() / (elapsed.count() / 1000.0);
+                 frame_counter = 0;
+                 last_fps_update = now;
++
++                std::cout << "[STATS] FPS: "
++                          << std::fixed << std::setprecision(1)
++                          << processing_fps.load() << std::endl;
+             }
+             
+             std::this_thread::sleep_for(std::chrono::milliseconds(16));
+         }
+     }
+ 
+     std::string generateDataJSON() {
+         std::ostringstream json;
+         
+         {
+             std::lock_guard<std::mutex> lock(data_mutex);
+             
+             double actual_width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+             double actual_height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+             
+             json << "{\n";
+             json << "  \"fps\": " << std::fixed << std::setprecision(1) << processing_fps.load() << ",\n";
+             json << "  \"timestamp\": " << current_puck.timestamp << ",\n";
+             json << "  \"table\": {\n";
+             json << "    \"width\": " << (int)actual_width << ",\n";
+             json << "    \"height\": " << (int)actual_height << "\n";
+             json << "  },\n";
+             json << "  \"puck\": {\n";
+             json << "    \"detected\": " << (current_puck.detected ? "true" : "false") << ",\n";
+             json << "    \"x\": " << current_puck.x << ",\n";

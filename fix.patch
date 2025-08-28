@@ -1,0 +1,33 @@
+# from repo root
+git apply <<'PATCH'
+diff --git a/src/robot/abb/AbbController.cpp b/src/robot/abb/AbbController.cpp
+--- a/src/robot/abb/AbbController.cpp
++++ b/src/robot/abb/AbbController.cpp
+@@
+-#include "../../external/abb_comm.h"
++#include "abb_comm.h"
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@
+ if(USE_ABB)
+     add_library(abb_robot
+         src/robot/abb/AbbController.cpp
+         src/robot/abb/RobotStrikePlanner.cpp
+         external/abb_comm.cpp
+     )
+-    target_include_directories(abb_robot PUBLIC
+-        ${CMAKE_CURRENT_SOURCE_DIR}/src
+-        ${CMAKE_CURRENT_SOURCE_DIR}/external
+-    )
+-    target_link_libraries(${PROJECT_NAME} PRIVATE abb_robot)
++    target_include_directories(abb_robot PUBLIC
++        ${CMAKE_CURRENT_SOURCE_DIR}/src
++        ${CMAKE_CURRENT_SOURCE_DIR}/external
++        ${OpenCV_INCLUDE_DIRS}
++    )
++    # Link OpenCV too (RobotStrikePlanner uses cv:: types)
++    target_link_libraries(abb_robot PUBLIC ${OpenCV_LIBS})
++    target_link_libraries(${PROJECT_NAME} PRIVATE abb_robot)
+ endif()
+PATCH
