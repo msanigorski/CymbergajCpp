@@ -6,11 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(BUILD_HEADLESS "Build without GUI support" ON)
 option(USE_ABB "Enable ABB integration if abb_comm is present" ON)
-
-if(USE_ABB)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_ABB=1)
-endif()
-
+option(BUILD_TESTS "Build tests" OFF)
 
 # --- OpenCV
 if(BUILD_HEADLESS)
@@ -22,7 +18,7 @@ endif()
 find_package(Threads REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
-# --- Źródła aplikacji
+# --- Sources
 set(SOURCES
     src/capture.cpp
     src/detector.cpp
@@ -30,16 +26,14 @@ set(SOURCES
     src/utils.cpp
 )
 
-
-
 if(BUILD_HEADLESS)
-    # zamiast main_headless.cpp dodajemy http_puck_tracker.cpp
-    list(APPEND SOURCES src/http_puck_tracker.cpp)
+    # Use the HTTP-capable headless main
+    list(APPEND SOURCES src/main_headless_with_http.cpp)
 else()
     list(APPEND SOURCES src/main.cpp src/overlay.cpp)
 endif()
 
-# --- Główna aplikacja
+# --- Main target
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -50,13 +44,18 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
         ${OpenCV_LIBS}
-        opencv_video        # <-- dodaj jawnie, gdyby ${OpenCV_LIBS} nie dodało
+        opencv_video          # ensure video module is linked explicitly if needed
         Threads::Threads
         yaml-cpp
         atomic
 )
 
-# --- RPi camera (legacy stack, jeśli występuje)
+# Define USE_ABB on the main target (must be after add_executable)
+if(USE_ABB)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE USE_ABB=1)
+endif()
+
+# --- RPi legacy camera (if present)
 if(EXISTS /opt/vc/include)
     target_include_directories(${PROJECT_NAME} PRIVATE /opt/vc/include)
     target_link_directories(${PROJECT_NAME} PRIVATE /opt/vc/lib)
@@ -64,7 +63,7 @@ if(EXISTS /opt/vc/include)
 endif()
 
 # =========================
-#  ABB (opcjonalnie)
+#  ABB (optional)
 # =========================
 if(USE_ABB)
     add_library(abb_robot
@@ -76,6 +75,7 @@ if(USE_ABB)
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/external
     )
+    target_compile_definitions(abb_robot PUBLIC USE_ABB=1)
     target_link_libraries(${PROJECT_NAME} PRIVATE abb_robot)
 else()
     message(STATUS "ABB: USE_ABB=OFF — building without ABB support")
