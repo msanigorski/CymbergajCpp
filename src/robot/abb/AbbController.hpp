@@ -28,7 +28,7 @@ public:
     // Konfiguracje
     bool setWorkObject(const std::array<double,7>& wobj_xyz_q); // [x,y,z,q0,qx,qy,qz]
     bool setTool(const std::array<double,7>& tool_xyz_q);       // [x,y,z,q0,qx,qy,qz]
-    bool setSpeed(double tcp_mm_s, double ori_deg_s);           // mm/s i deg/s (jak w abb_comm)
+    bool setSpeed(double tcp_mm_s, double ori_deg_s);           // mm/s i deg/s
     bool setZoneFine();                                         // fine = true
     bool setZone(double p_tcp_mm, double p_ori_mm, double ori_deg); // fine=false
 
@@ -37,7 +37,7 @@ public:
 
     // Odczyty (opcjonalne)
     bool getCartesian(std::array<double,7>& pose_xyz_q);        // [x,y,z,q0,qx,qy,qz]
-    bool getJoints(std::array<double,6>& joints_deg);           // stopnie (tak zwraca parseJoints)
+    bool getJoints(std::array<double,6>& joints_deg);           // stopnie (parseJoints)
 
     const std::string& lastError() const { return last_error_; }
 
@@ -57,3 +57,4 @@ private:
 };
 
 }}} // namespace
+

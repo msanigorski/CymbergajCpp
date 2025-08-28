@@ -1,32 +1,35 @@
-#include "robot/abb/RobotStrikePlanner.hpp"
-#include "robot/abb/AbbController.hpp"
+#include "RobotStrikePlanner.hpp"
 
-namespace cymbergaj { namespace robot { namespace abb {
+#include <algorithm>
+#include <array>
+#include <iostream>
 
-using Pose7 = std::array<double,7>;
+namespace cymbergaj::robot::abb {
 
-Pose7 RobotStrikePlanner::mapPuckToTCP(const cv::Point2f& p) {
-    // PRZYKŁADOWY mapping (dopasuj do stołu i kalibracji!)
-    // Załóżmy układ: 1 px = 1 mm, (0,0) w lewym górnym rogu obrazu.
-    // Ustawiamy stałą wysokość Z i kwaternion „do dołu”.
-    const double x_mm = static_cast<double>(p.x);
-    const double y_mm = static_cast<double>(p.y);
-    const double z_mm = 50.0;           // wysokość nad stołem (mm) — dopasuj
-    const double q0 = 1.0, qx = 0.0, qy = 0.0, qz = 0.0; // brak rotacji (w,x,y,z)
-
-    return { x_mm, y_mm, z_mm, q0, qx, qy, qz };
-}
+RobotStrikePlanner::RobotStrikePlanner(AbbController& ctrl,
+                                       double table_width_mm,
+                                       double table_height_mm,
+                                       double strike_height_mm)
+    : controller(ctrl),
+      table_width(table_width_mm),
+      table_height(table_height_mm),
+      strike_height(strike_height_mm) {}
 
 void RobotStrikePlanner::strikeAt(const cv::Point2f& puck_pos) {
-    if (!ctrl_) return;
+    if (!controller.isConnected()) {
+        std::cerr << "[Planner] Robot not connected!" << std::endl;
+        return;
+    }
 
-    // 1) Ustal wobj/tool/speed/zone — jednorazowo gdzie indziej;
-    // tu tylko ruch. (Załóżmy, że już ustawione).
-    // 2) Wylicz docelowy TCP
-    Pose7 pose = mapPuckToTCP(puck_pos);
+    double x = std::clamp<double>(puck_pos.x, 0.0, table_width);
+    double y = std::clamp<double>(puck_pos.y, 0.0, table_height);
+    double z = strike_height;
 
-    // 3) MoveL
-    (void)ctrl_->moveL(pose);
+    std::array<double,7> pose{x, y, z, 1.0, 0.0, 0.0, 0.0};
+
+    std::cout << "[Planner] Striking at puck (" << x << ", " << y << ")" << std::endl;
+    controller.moveL(pose);
 }
 
-}}} // namespace
+} // namespace cymbergaj::robot::abb
+

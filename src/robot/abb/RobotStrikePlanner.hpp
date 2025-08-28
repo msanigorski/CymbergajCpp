@@ -1,23 +1,27 @@
 #pragma once
+
 #include <opencv2/core.hpp>
-#include <array>
 
-namespace cymbergaj { namespace robot { namespace abb {
+#include "AbbController.hpp"
 
-class AbbController; // forward-declare
+namespace cymbergaj::robot::abb {
 
+// Translates puck coordinates to robot commands for air-hockey strikes.
 class RobotStrikePlanner {
 public:
-    explicit RobotStrikePlanner(AbbController* ctrl) : ctrl_(ctrl) {}
+    RobotStrikePlanner(AbbController& ctrl,
+                       double table_width_mm = 800.0,
+                       double table_height_mm = 400.0,
+                       double strike_height_mm = 50.0);
 
-    // Pozycja krążka w pikselach lub mm (zależnie od Twojej konwencji)
     void strikeAt(const cv::Point2f& puck_pos);
 
-    // Prosty mapping na pozycję TCP w mm (demo)
-    static std::array<double,7> mapPuckToTCP(const cv::Point2f& p);
-
 private:
-    AbbController* ctrl_{nullptr};
+    AbbController& controller;
+    double table_width;
+    double table_height;
+    double strike_height;
 };
 
-}}} // namespace
+} // namespace cymbergaj::robot::abb
+
