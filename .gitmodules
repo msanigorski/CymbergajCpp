@@ -1,0 +1,3 @@
+[submodule "external/open_abb"]
+	path = external/open_abb
+	url = https://github.com/robotics/open_abb

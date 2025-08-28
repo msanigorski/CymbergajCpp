@@ -1,0 +1,15 @@
+table:
+  dimensions: [320, 240]
+detection:
+  hsv_lower: [0, 100, 100]
+  hsv_upper: [10, 255, 255]
+  min_area: 50
+  max_area: 2000
+  min_circularity: 0.7
+  roi: [0, 0, 320, 240]
+physics:
+  restitution: 0.9
+overlay:
+  puck_radius: 5
+  velocity_scale: 5.0
+  trajectory_points: 50
