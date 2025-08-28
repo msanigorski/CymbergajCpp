@@ -1,8 +1,0 @@
-/home/pi/puck_tracker/build/CMakeFiles/puck_tracker.dir
-/home/pi/puck_tracker/build/CMakeFiles/robot_test_http.dir
-/home/pi/puck_tracker/build/CMakeFiles/edit_cache.dir
-/home/pi/puck_tracker/build/CMakeFiles/rebuild_cache.dir
-/home/pi/puck_tracker/build/CMakeFiles/list_install_components.dir
-/home/pi/puck_tracker/build/CMakeFiles/install.dir
-/home/pi/puck_tracker/build/CMakeFiles/install/local.dir
-/home/pi/puck_tracker/build/CMakeFiles/install/strip.dir
