@@ -1,5 +1,5 @@
 #include "AbbController.hpp"
-#include "../../external/abb_comm.h"
+#include "abb_comm.h"
 
 #include <sys/socket.h>
 #include <netinet/in.h>

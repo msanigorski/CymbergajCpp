@@ -27,7 +27,7 @@ set(SOURCES
 )
 
 if(BUILD_HEADLESS)
-    # Use the HTTP-capable headless main
+    # HTTP-capable headless main
     list(APPEND SOURCES src/main_headless_with_http.cpp)
 else()
     list(APPEND SOURCES src/main.cpp src/overlay.cpp)
@@ -44,13 +44,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
         ${OpenCV_LIBS}
-        opencv_video          # ensure video module is linked explicitly if needed
+        opencv_video          # explicitly link video just in case
         Threads::Threads
         yaml-cpp
         atomic
 )
 
-# Define USE_ABB on the main target (must be after add_executable)
+# Define USE_ABB for the app (after target exists)
 if(USE_ABB)
     target_compile_definitions(${PROJECT_NAME} PRIVATE USE_ABB=1)
 endif()
@@ -74,8 +74,10 @@ if(USE_ABB)
     target_include_directories(abb_robot PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/external
+        ${OpenCV_INCLUDE_DIRS}
     )
     target_compile_definitions(abb_robot PUBLIC USE_ABB=1)
+    target_link_libraries(abb_robot PUBLIC ${OpenCV_LIBS})
     target_link_libraries(${PROJECT_NAME} PRIVATE abb_robot)
 else()
     message(STATUS "ABB: USE_ABB=OFF — building without ABB support")
