@@ -18,6 +18,8 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <iomanip>
+#include <array>
 
 #include "capture.hpp"
 #include "detector.hpp"
@@ -43,6 +45,7 @@ public:
     bool isConnected() const { return false; }
     bool setSpeed(double, double) { return false; }
     bool moveL(const std::array<double,7>&) { return false; }
+    bool getCartesian(std::array<double,7>&) { return false; }
     const std::string& lastError() const { static std::string err = "Mock controller"; return err; }
 };
 
@@ -100,6 +103,7 @@ struct Position3D {
 };
 
 struct RobotCommand {
+    // UNITS: meters for positions, unitless 0.05..1.0 for speed knob
     float x{0}, y{0}, z{0};
     float q0{1}, qx{0}, qy{0}, qz{0};
     float speed{0.5f};
@@ -208,14 +212,14 @@ TableCalibration g_table_calib;
 std::mutex g_robot_mutex;
 
 struct RobotConnection {
-    std::string ip = "192.168.125.1";
-    uint16_t port = 11000;
+    std::string ip = "10.25.74.172";
+    uint16_t port = 5000;
 } g_connection;
 
 #ifdef USE_ABB
 static AbbController* g_robot = nullptr;
 #else
-static AbbRobotController* g_robot = nullptr; // Will be mock type
+static AbbController* g_robot = nullptr; // mock when USE_ABB=OFF
 #endif
 
 Config parse_args(int argc, char* argv[]) {
@@ -280,12 +284,11 @@ Config parse_args(int argc, char* argv[]) {
 }
 
 // ======= Robot Control Functions =======
-// ======= Robot Control Functions =======
 // Fixed calculateRobotCommand function with proper coordinate conversion and rate limiting
 RobotCommand calculateRobotCommand(const cv::Point2f& puck_px, const cv::Point2f& velocity_px) {
     RobotCommand cmd{};
-    cmd.speed = 100.0f; // mm/s
-    cmd.z = 50.0f; // 50mm above table
+    cmd.speed = 0.5f; // 0.05..1.0 (later scaled to mm/s)
+    cmd.z = 0.050f;   // 50mm above table in meters
     cmd.q0 = 1.0f;
     
     // Rate limiting - don't send commands too frequently
@@ -294,48 +297,42 @@ RobotCommand calculateRobotCommand(const cv::Point2f& puck_px, const cv::Point2f
     
     auto now = std::chrono::high_resolution_clock::now();
     if (now - last_command_time < MIN_COMMAND_INTERVAL) {
-        return cmd; // Return empty command to skip
+        return cmd; // Return default command (no move)
     }
     last_command_time = now;
 
-    // Convert to millimeters using proper scaling
-    cv::Point2f puck_mm, pred_mm;
+    // Convert to meters using proper scaling
+    cv::Point2f puck_m, pred_m;
     
     if (g_table_calib.ready) {
         // Use homography transformation
         cv::Point2f table_coords = g_table_calib.pixelToTableMeters(puck_px);
-        puck_mm.x = table_coords.x * 1000.0f; // m to mm
-        puck_mm.y = table_coords.y * 1000.0f;
+        puck_m = table_coords;
         
         // Predict future position
         cv::Point2f pred_px = puck_px + velocity_px * 0.2f; // 200ms prediction
-        cv::Point2f pred_coords = g_table_calib.pixelToTableMeters(pred_px);
-        pred_mm.x = pred_coords.x * 1000.0f;
-        pred_mm.y = pred_coords.y * 1000.0f;
+        pred_m = g_table_calib.pixelToTableMeters(pred_px);
     } else {
-        // Fallback: Assume table dimensions and center
-        // For a 640x480 image, assume table is ~400x300mm in the ROI
-        float table_width_mm = 400.0f;
-        float table_height_mm = 300.0f;
+        // Fallback: Assume table dimensions ~0.4 x 0.3 m in ROI
+        float table_width_m = 0.400f;
+        float table_height_m = 0.300f;
         float roi_width = g_shared.table_roi.width;
         float roi_height = g_shared.table_roi.height;
         
-        // Convert pixel coordinates to mm relative to table center
         float center_x = g_shared.table_roi.x + roi_width / 2.0f;
         float center_y = g_shared.table_roi.y + roi_height / 2.0f;
         
-        puck_mm.x = ((puck_px.x - center_x) / roi_width) * table_width_mm;
-        puck_mm.y = ((puck_px.y - center_y) / roi_height) * table_height_mm;
+        puck_m.x = ((puck_px.x - center_x) / roi_width) * table_width_m;
+        puck_m.y = ((puck_px.y - center_y) / roi_height) * table_height_m;
         
-        // Predict future position
         cv::Point2f pred_px = puck_px + velocity_px * 0.2f;
-        pred_mm.x = ((pred_px.x - center_x) / roi_width) * table_width_mm;
-        pred_mm.y = ((pred_px.y - center_y) / roi_height) * table_height_mm;
+        pred_m.x = ((pred_px.x - center_x) / roi_width) * table_width_m;
+        pred_m.y = ((pred_px.y - center_y) / roi_height) * table_height_m;
     }
 
-    // Robot position in mm (track actual robot position)
-    cv::Point2f robot_mm = g_strategy.robot_position * 1000.0f;
-    float distance_mm = cv::norm(puck_mm - robot_mm);
+    // Robot position in meters (track actual robot position)
+    cv::Point2f robot_m = g_strategy.robot_position;
+    float distance_m = cv::norm(puck_m - robot_m);
     
     // Velocity threshold for moving puck
     float puck_speed = cv::norm(velocity_px);
@@ -344,52 +341,52 @@ RobotCommand calculateRobotCommand(const cv::Point2f& puck_px, const cv::Point2f
     switch (g_strategy.current_mode) {
         case GameStrategy::DEFENSIVE:
             // Stay on defensive line, match Y coordinate
-            cmd.x = -100.0f; // Stay back 100mm from center
-            cmd.y = std::clamp(puck_mm.y * 0.5f, -120.0f, 120.0f);
+            cmd.x = -0.100f; // Stay back 100mm from center
+            cmd.y = std::clamp(puck_m.y * 0.5f, -0.120f, 0.120f);
             cmd.name = "Defensive";
             break;
             
         case GameStrategy::OFFENSIVE:
             // Move towards predicted puck position
-            cmd.x = std::clamp(pred_mm.x + 30.0f, -180.0f, 180.0f);
-            cmd.y = std::clamp(pred_mm.y, -120.0f, 120.0f);
+            cmd.x = std::clamp(pred_m.x + 0.030f, -0.180f, 0.180f);
+            cmd.y = std::clamp(pred_m.y, -0.120f, 0.120f);
             cmd.name = "Offensive";
             break;
             
         case GameStrategy::INTERCEPT:
-            // Only intercept if puck is moving towards us
-            if (puck_is_moving && velocity_px.x > 0) { // Moving right towards robot
-                cmd.x = std::clamp(pred_mm.x, -180.0f, 180.0f);
-                cmd.y = std::clamp(pred_mm.y, -120.0f, 120.0f);
+            // Only intercept if puck is moving towards us (screen x+ means right)
+            if (puck_is_moving && velocity_px.x > 0) {
+                cmd.x = std::clamp(pred_m.x, -0.180f, 0.180f);
+                cmd.y = std::clamp(pred_m.y, -0.120f, 0.120f);
                 cmd.name = "Intercept";
                 
                 // Strike only if very close and aligned
-                if (distance_mm < 30.0f && std::abs(puck_mm.y - robot_mm.y) < 20.0f) {
+                if (distance_m < 0.030f && std::abs(puck_m.y - robot_m.y) < 0.020f) {
                     cmd.execute_strike = true;
-                    cmd.speed = 300.0f;
+                    cmd.speed = 0.9f;
                     cmd.name = "Strike!";
                 }
             } else {
                 // Return to defensive position if puck not approaching
-                cmd.x = -50.0f;
-                cmd.y = std::clamp(puck_mm.y * 0.3f, -100.0f, 100.0f);
+                cmd.x = -0.050f;
+                cmd.y = std::clamp(puck_m.y * 0.3f, -0.100f, 0.100f);
                 cmd.name = "Wait";
             }
             break;
     }
 
-    // Enhanced safety limits (robot workspace)
-    cmd.x = std::clamp(cmd.x, -200.0f, 200.0f); // ±200mm X range
-    cmd.y = std::clamp(cmd.y, -150.0f, 150.0f); // ±150mm Y range  
-    cmd.z = std::clamp(cmd.z, 20.0f, 100.0f);   // 20-100mm Z range
+    // Enhanced safety limits (robot workspace) in meters
+    cmd.x = std::clamp(cmd.x, -0.200f, 0.200f);
+    cmd.y = std::clamp(cmd.y, -0.150f, 0.150f);
+    cmd.z = std::clamp(cmd.z,  0.020f, 0.100f);
 
     // Debug output (reduced frequency)
     static int debug_counter = 0;
     if (++debug_counter % 10 == 0) { // Every 10th command
         std::cout << "[ROBOT] Puck px(" << puck_px.x << "," << puck_px.y 
-                  << ") -> mm(" << puck_mm.x << "," << puck_mm.y << ")" << std::endl;
+                  << ") -> m(" << puck_m.x << "," << puck_m.y << ")" << std::endl;
         std::cout << "[ROBOT] " << cmd.name << ": (" << cmd.x << "," << cmd.y << "," << cmd.z 
-                  << ") Speed: " << cmd.speed << " Dist: " << distance_mm << "mm" << std::endl;
+                  << ") Speed: " << cmd.speed << " Dist: " << distance_m << "m" << std::endl;
     }
 
     return cmd;
@@ -421,84 +418,83 @@ void setupDefaultTableCalibration() {
 
 // Modified sendRobotCommand with better error handling
 bool sendRobotCommand(const RobotCommand& cmd) {
-    // Skip empty commands (from rate limiting)
-    if (cmd.name.empty()) return true;
-    
 #ifdef USE_ABB
-    std::lock_guard<std::mutex> lock(g_robot_mutex);
+    std::lock_guard<std::mutex> lk(g_robot_mutex);
     if (!g_robot || !g_robot->isConnected()) {
-        g_robot_status.last_error = "Robot not connected";
+        std::cout << "[ROBOT] Not connected!\n";
         return false;
     }
 
     try {
-        g_robot_status.target_position = Position3D(cmd.x, cmd.y, cmd.z, cmd.q0, cmd.qx, cmd.qy, cmd.qz);
-        g_robot_status.is_moving = true;
-        g_robot_status.current_test = cmd.name;
+        // Set speed (mm/s and deg/s)
+        double tcp_mm_s  = std::clamp<double>(cmd.speed, 0.05, 1.0) * 500.0; // 25..500 mm/s
+        double ori_deg_s = std::clamp<double>(cmd.speed, 0.05, 1.0) * 100.0; // 5..100 deg/s
 
-        // Convert mm to meters for ABB controller
-        double x_m = cmd.x / 1000.0;
-        double y_m = cmd.y / 1000.0;
-        double z_m = cmd.z / 1000.0;
+        if (!g_robot->setSpeed(tcp_mm_s, ori_deg_s)) {
+            std::cout << "[ROBOT] Failed to set speed\n";
+            return false;
+        }
 
-        // Set speed (mm/s to ABB units)
-        g_robot->setSpeed(cmd.speed, cmd.speed * 0.5); // Reduced rotational speed
+        // Quaternion for tool (adjust if needed for your setup)
+        double q0 = cmd.q0, qx = cmd.qx, qy = cmd.qy, qz = cmd.qz;
         
-        // Execute movement
-        std::array<double,7> pose = {x_m, y_m, z_m, cmd.q0, cmd.qx, cmd.qy, cmd.qz};
+        // Positions already in meters
+        double x_m = cmd.x;  
+        double y_m = cmd.y;
+        double z_m = cmd.z;
         
+        // Safety limits (in meters)
+        x_m = std::clamp(x_m, -0.600, 0.600);
+        y_m = std::clamp(y_m, -0.400, 0.400);
+        z_m = std::clamp(z_m,  0.020, 0.100);
+
+        std::cout << "[ROBOT] Moving to: (" 
+                  << x_m*1000.0 << ", " << y_m*1000.0 << ", " << z_m*1000.0 
+                  << ") mm at speed " << tcp_mm_s << " mm/s\n";
+
+        // Send the actual move command (linear)
+        std::array<double, 7> pose = {x_m, y_m, z_m, q0, qx, qy, qz};
+        bool success = g_robot->moveL(pose);
+        
+        if (!success) {
+            std::cout << "[ROBOT] moveL failed\n";
+            g_robot_status.last_error = "Move command failed";
+            return false;
+        }
+
+        // Handle strike motion if requested
         if (cmd.execute_strike) {
-            // Strike sequence: approach -> strike -> return
-            g_robot->setSpeed(800.0, 120.0);
+            std::cout << "[ROBOT] Executing strike motion\n";
             
-            // Strike target (move forward in Y by 60mm)
-            double y_strike = std::clamp(y_m + 0.06, -0.2, 0.2);
-            std::array<double,7> strike_pose = {x_m, y_strike, z_m, cmd.q0, cmd.qx, cmd.qy, cmd.qz};
+            // Quick forward motion for strike
+            g_robot->setSpeed(800.0, 120.0);  // Fast speed for strike
             
-            g_robot->moveL(strike_pose);
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            double strike_distance = 0.08; // 80mm strike distance
+            double y_strike = y_m + strike_distance; // meters
             
-            // Return to original position
-            g_robot->setSpeed(cmd.speed, cmd.speed * 0.5);
-            g_robot->moveL(pose);
-        } else {
+            // Strike forward
+            std::array<double,7> pose_strike = {x_m, y_strike, z_m, q0, qx, qy, qz};
+            g_robot->moveL(pose_strike);
+            
+            // Brief pause
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            
+            // Return to position
+            g_robot->setSpeed(tcp_mm_s, ori_deg_s);
             g_robot->moveL(pose);
         }
-        
-        // Update robot position tracking (convert back to meters for strategy)
-        g_strategy.robot_position = cv::Point2f(x_m, y_m);
-
-        g_robot_status.current_position = g_robot_status.target_position;
-        g_robot_status.is_moving = false;
-        g_robot_status.last_error.clear();
-        g_robot_status.last_update = std::chrono::high_resolution_clock::now();
         
         return true;
         
     } catch (const std::exception& e) {
-        g_robot_status.last_error = "Command failed: " + std::string(e.what());
-        g_robot_status.is_moving = false;
+        g_robot_status.last_error = std::string("Command failed: ") + e.what();
+        std::cout << "[ROBOT] Exception: " << e.what() << "\n";
         return false;
     }
 #else
-    // Simulation mode with proper coordinate handling
-    std::lock_guard<std::mutex> lock(g_robot_mutex);
-    
-    g_robot_status.target_position = Position3D(cmd.x, cmd.y, cmd.z, cmd.q0, cmd.qx, cmd.qy, cmd.qz);
-    g_robot_status.is_moving = true;
-    g_robot_status.current_test = cmd.name;
-    
-    // Update strategy position (convert mm to m)
-    g_strategy.robot_position = cv::Point2f(cmd.x / 1000.0f, cmd.y / 1000.0f);
-    
-    // Simulate movement delay
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    
-    g_robot_status.current_position = g_robot_status.target_position;
-    g_robot_status.is_moving = false;
-    g_robot_status.last_error.clear();
-    g_robot_status.last_update = std::chrono::high_resolution_clock::now();
-    
+    // Simulation mode
+    std::cout << "[SIM] Robot Command: x=" << cmd.x << ", y=" << cmd.y << ", z=" << cmd.z
+              << ", speed=" << cmd.speed << ", strike=" << (cmd.execute_strike?"yes":"no") << std::endl;
     return true;
 #endif
 }
@@ -962,15 +958,15 @@ std::string get_html_page() {
                         <span id="max-area-val">5000</span>
                     </div>
                 </div>
-            </div>
+            </div]
             
             <div class="section">
                 <h2>🤖 Robot Control</h2>
                 
                 <h3>Connection</h3>
                 <div class="controls">
-                    <input id="robot-ip" type="text" value="192.168.125.1" placeholder="Robot IP">
-                    <input id="robot-port" type="number" value="11000" placeholder="Port">
+                    <input id="robot-ip" type="text" value="10.25.74.172" placeholder="Robot IP">
+                    <input id="robot-port" type="number" value="5000" placeholder="Port">
                     <button onclick="connectRobot()">🔌 Connect</button>
                     <button onclick="disconnectRobot()" class="danger">❌ Disconnect</button>
                 </div>
@@ -1197,7 +1193,6 @@ std::string get_html_page() {
         async function disconnectRobot() {
             try {
                 await fetch('/robot/disconnect', { method: 'POST' });
-                alert('Robot disconnected');
             } catch (error) {
                 alert('Disconnect failed: ' + error.message);
             }
@@ -1463,10 +1458,11 @@ void handle_client(int client_socket) {
         }
     }
     // ===== Robot Control Endpoints =====
-    else if (request.find("POST /robot/connect") == 0) {
-        // Parse query ?ip=...&port=...
+    else if (request.rfind("POST /robot/connect", 0) == 0) {
+        // Parse query parameters
         std::string ip = g_connection.ip;
         uint16_t port = g_connection.port;
+        
         auto qpos = request.find('?');
         if (qpos != std::string::npos) {
             auto qs = request.substr(qpos+1, request.find(' ') - (qpos+1));
@@ -1486,24 +1482,52 @@ void handle_client(int client_socket) {
         bool ok = false;
         std::string err;
 
-#ifdef USE_ABB
+    #ifdef USE_ABB
         {
-            std::lock_guard<std::mutex> lock(g_robot_mutex);
+            std::lock_guard<std::mutex> lk(g_robot_mutex);
             if (g_robot) { 
-                try { g_robot->disconnect(); } catch(...) {} 
-                delete g_robot; 
+                try { 
+                    g_robot->disconnect(); 
+                } catch(...) {} 
                 g_robot = nullptr; 
             }
             g_connection.ip = ip;
             g_connection.port = port;
             g_robot_status.last_error.clear();
         }
+        
         try {
-            // Create ABB robot controller (simplified constructor - just IP and port)
+            std::cout << "[ROBOT] Connecting to " << ip << ":" << port << "\n";
+            
+            // Create ABB controller
             auto* r = new AbbController(ip, port);
             
             if (r->connect()) {
-                std::lock_guard<std::mutex> lock(g_robot_mutex);
+                std::cout << "[ROBOT] Connected successfully\n";
+                
+                // Set initial speed
+                r->setSpeed(100.0, 50.0);
+                
+                // Query current position if possible
+                std::array<double, 7> pose;
+                if (r->getCartesian(pose)) {
+                    std::cout << "[ROBOT] Initial position: (" 
+                              << pose[0] << ", " << pose[1] << ", " << pose[2] << ") m\n";
+                    
+                    // Update robot status (store in mm for UI table)
+                    g_robot_status.current_position.x = pose[0] * 1000.0f;  // m to mm
+                    g_robot_status.current_position.y = pose[1] * 1000.0f;
+                    g_robot_status.current_position.z = pose[2] * 1000.0f;
+                    g_robot_status.current_position.q0 = pose[3];
+                    g_robot_status.current_position.qx = pose[4];
+                    g_robot_status.current_position.qy = pose[5];
+                    g_robot_status.current_position.qz = pose[6];
+                    
+                    // Update strategy robot position
+                    g_strategy.robot_position = cv::Point2f(pose[0], pose[1]);
+                }
+                
+                std::lock_guard<std::mutex> lk(g_robot_mutex);
                 g_robot = r; 
                 g_robot_status.is_connected = true;
                 ok = true;
@@ -1516,18 +1540,18 @@ void handle_client(int client_socket) {
         }
 
         if (!ok) {
-            std::lock_guard<std::mutex> lock(g_robot_mutex);
+            std::lock_guard<std::mutex> lk(g_robot_mutex);
             g_robot_status.last_error = err.empty() ? "Unknown error" : err;
             g_robot_status.is_connected = false;
+            std::cout << "[ROBOT] Connection failed: " << g_robot_status.last_error << "\n";
         }
-#else
+    #else
         {
-            std::lock_guard<std::mutex> lock(g_robot_mutex);
-            g_robot_status.is_connected = true;
-            g_robot_status.last_error = "Simulation mode - ABB disabled at compile time";
+            std::lock_guard<std::mutex> lk(g_robot_mutex);
+            g_robot_status.last_error = "ABB disabled at compile time (USE_ABB=OFF)";
+            g_robot_status.is_connected = false;
         }
-        ok = true;
-#endif
+    #endif
         send_http_response(client_socket, "application/json", robot_status_json());
     }
     else if (request.find("POST /robot/disconnect") == 0) {
@@ -1535,7 +1559,6 @@ void handle_client(int client_socket) {
             std::lock_guard<std::mutex> lock(g_robot_mutex);
             if (g_robot) { 
                 try { g_robot->disconnect(); } catch(...) {} 
-                delete g_robot; 
                 g_robot = nullptr; 
             }
             g_robot_status.is_connected = false;
@@ -1558,7 +1581,6 @@ void handle_client(int client_socket) {
         if (g_robot) {
             try {
                 g_robot->disconnect();
-                delete g_robot; 
                 g_robot = nullptr;
                 g_robot_status.last_error = "Emergency stop executed (connection closed)";
             } catch (const std::exception& e) {
@@ -1695,6 +1717,7 @@ int main(int argc, char* argv[]) {
         g_table_calib.height_mm = yaml_config["table"]["height_mm"].as<float>();
     }
     setupDefaultTableCalibration();
+
     // Open output file
     std::ofstream output_file;
     if (cfg.save_output) {
@@ -1789,7 +1812,6 @@ int main(int argc, char* argv[]) {
         std::lock_guard<std::mutex> lock(g_robot_mutex);
         if (g_robot) {
             try { g_robot->disconnect(); } catch(...) {}
-            delete g_robot; 
             g_robot = nullptr;
         }
     }
